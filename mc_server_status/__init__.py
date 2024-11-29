@@ -6,16 +6,12 @@ from nonebot import on_keyword, on_command
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, Event
 from nonebot.adapters.onebot.v11.message import Message
 from nonebot.params import CommandArg, ArgPlainText
-
 from mcstatus import JavaServer, BedrockServer
 from PIL import Image, ImageDraw, ImageFont
 import pandas as pd
 from os import path
 from time import localtime, strftime, time
 import base64, io
-
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
 
 # 资源加载
 sourceFile = path.dirname(path.abspath(__file__)) + "\\source"
@@ -24,21 +20,12 @@ server_list = pd.read_csv(path.dirname(path.abspath(__file__)) + "\\server.csv")
 admin_list = pd.read_csv(path.dirname(path.abspath(__file__)) + "\\admin.csv")      # 管理员表
 super_admins = admin_list[admin_list['groupId'] == 0]['qid'].values                 # 全局管理员清单
 groups = set(server_list['qid'])                                                    # 需要用到此插件的群组
-model = SentenceTransformer(path.dirname(path.abspath(__file__)) + '\\finetuned_paraphrase-multilingual-MiniLM-L12-v2')                # 模糊匹配所需模型
 
 # 变量初始化
 CHECKED = False     # 是否在启动后检测过至少一次
 old_t = time()      # 用于记录上次检测时间，防止生成图片过快风控
 tmp_info = ""
 tmp_index = -1
-
-def calculate_similarity(text1: str, text2: str) -> float:
-    sentences = [text1, text2]
-    embeddings = model.encode(sentences)
-    
-    similarity = cosine_similarity([embeddings[0]], [embeddings[1]]) # type: ignore
-
-    return similarity[0][0] 
 
 def get_size(text, font):
     """获得text实际渲染宽度"""
@@ -58,12 +45,12 @@ async def server_check(event: GroupMessageEvent):
 async def admin_check(event: GroupMessageEvent):
     """查询是否为超管/对应群管理"""
     return event.group_id in groups and (
-        event.user_id in super_admins or  # type: ignore
+        event.user_id in super_admins or 
         event.user_id in admin_list[admin_list['groupId'] == event.group_id].values
     )
 
 # 唤起指令
-lookUp = on_keyword(set(["服"]), rule=server_check, priority=1)
+lookUp = on_keyword(set(["服务器信息"]), rule=server_check, priority=1)
 addOp = on_command("添加管理员", rule=admin_check, priority=1)
 removeOp = on_command("移除管理员", rule=admin_check, priority=1)
 modIp = on_command("改ip", rule=admin_check, priority=1)
@@ -73,19 +60,11 @@ addIp = on_command("加ip", rule=admin_check, priority=1)
 async def get_information(event: Event):
     """
     ## 查询服务器信息指令。
-    - 查询方式: 模糊匹配语义;
+    - 查询方式: 匹配 "服务器信息" 字符串;
     - 响应方式: 回应包含所需全部ip的对应图片.
     - 返回的图片如果成功生成, 会被保存为./source/res.png
     """
     global CHECKED, old_t, server_list
-    keymatches = ["查询服务器信息", "服务器现在开着吗？"]
-    sim_res = []
-    for m in keymatches:
-        sim_res.append(calculate_similarity(event.get_plaintext(), m))
-    print(f"相似度结果：{', '.join([str(round(i, 4)) for i in sim_res])}")
-    if (max(sim_res) < 0.4):
-        await lookUp.finish()
-
     t = time()
     if (CHECKED is True and t - old_t <= 30):
         await lookUp.finish(Message(f"查询太频繁了喵~ ({int(30 - t + old_t)}秒后)"))
